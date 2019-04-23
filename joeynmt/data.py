@@ -40,6 +40,7 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
     trg_lang = data_cfg["trg"]
     train_path = data_cfg["train"]
     dev_path = data_cfg["dev"]
+    feedback_suffix = data_cfg.get("feedback", None)
     test_path = data_cfg.get("test", None)
     level = data_cfg["level"]
     lowercase = data_cfg["lowercase"]
@@ -59,14 +60,27 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
                            batch_first=True, lower=lowercase,
                            include_lengths=True)
 
-    train_data = TranslationDataset(path=train_path,
-                                    exts=("." + src_lang, "." + trg_lang),
-                                    fields=(src_field, trg_field),
-                                    filter_pred=
-                                    lambda x: len(vars(x)['src'])
-                                    <= max_sent_length
-                                    and len(vars(x)['trg'])
-                                    <= max_sent_length)
+    # use feedback information as well
+    if feedback_suffix is not None:
+        weight_field = data.RawField()
+        # token or sentence weights are given for training target
+        train_data = WeightedTranslationDataset(
+            path=train_path,
+            exts=("." + src_lang, "." + trg_lang, "." + feedback_suffix),
+            fields=(src_field, trg_field, weight_field),
+            filter_pred=
+            lambda x: len(vars(x)['src']) <= max_sent_length and
+                      len(vars(x)['trg']) <= max_sent_length)
+
+    else:
+        train_data = TranslationDataset(path=train_path,
+                                        exts=("." + src_lang, "." + trg_lang),
+                                        fields=(src_field, trg_field),
+                                        filter_pred=
+                                        lambda x: len(vars(x)['src'])
+                                        <= max_sent_length
+                                        and len(vars(x)['trg'])
+                                        <= max_sent_length)
 
     src_max_size = data_cfg.get("src_voc_limit", sys.maxsize)
     src_min_freq = data_cfg.get("src_voc_min_freq", 1)
@@ -164,3 +178,40 @@ class MonoDataset(Dataset):
         src_file.close()
 
         super(MonoDataset, self).__init__(examples, fields, **kwargs)
+
+
+class WeightedTranslationDataset(Dataset):
+    """ Defines a parallel dataset with weights for the targets. """
+
+    def __init__(self, path, exts, fields, **kwargs):
+        """Create a TranslationDataset given paths and fields.
+
+        :param path: Prefix of path to the data file
+        :param ext: Containing the extension to path for this language.
+        :param field: Containing the fields that will be used for data.
+        :param kwargs: Passed to the constructor of data.Dataset.
+        """
+
+        if not isinstance(fields[0], (tuple, list)):
+            fields = [('src', fields[0]), ('trg', fields[1]),
+                      ('weights', fields[2])]
+
+        src_path, trg_path, feedback_path = tuple(os.path.expanduser(path + x)
+                                                  for x in exts)
+
+        examples = []
+        with open(src_path) as src_file, open(trg_path) as trg_file, \
+                open(feedback_path) as feedback_file:
+            for src_line, trg_line, weights_line in \
+                    zip(src_file, trg_file, feedback_file):
+                src_line, trg_line = src_line.strip(), trg_line.strip()
+                weights = [float(weight) for weight in
+                           weights_line.strip().split(" ")]
+                if src_line != '' and trg_line != '':
+                    # there must be feedback for every token
+                    assert(len(weights) == len(fields[1][1].tokenize(trg_line)))
+                    examples.append(data.Example.fromlist(
+                        [src_line, trg_line, weights], fields))
+
+        super(WeightedTranslationDataset, self).__init__(examples,
+                                                         fields, **kwargs)

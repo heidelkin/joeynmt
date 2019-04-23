@@ -133,7 +133,10 @@ class Model(nn.Module):
         # compute batch loss
         batch_loss = loss_function(
             input=log_probs.contiguous().view(-1, log_probs.size(-1)),
-            target=batch.trg.contiguous().view(-1))
+            target=batch.trg.contiguous().view(-1),
+            # add weights = token-level feedback here
+            weights=batch.weights.contiguous().view(-1) if batch.weights is not
+                                                           None else None)
         # return batch loss = sum over all elements in batch that are not pad
         return batch_loss
 

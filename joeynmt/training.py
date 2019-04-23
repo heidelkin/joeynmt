@@ -31,7 +31,7 @@ from joeynmt.prediction import validate_on_data
 from joeynmt.data import load_data, make_data_iter
 from joeynmt.builders import build_optimizer, build_scheduler, \
     build_gradient_clipper
-
+from joeynmt.loss import WeightedCrossEntropy
 
 # pylint: disable=too-many-instance-attributes
 class TrainManager:
@@ -63,7 +63,8 @@ class TrainManager:
         self._log_parameters_list()
 
         # objective
-        self.loss = nn.NLLLoss(ignore_index=self.pad_index, reduction='sum')
+        self.loss = WeightedCrossEntropy(ignore_index=self.pad_index)
+            #nn.NLLLoss(ignore_index=self.pad_index, reduction='sum')
         self.normalization = train_config.get("normalization", "batch")
         if self.normalization not in ["batch", "tokens"]:
             raise ConfigurationError("Invalid normalization. "
@@ -142,6 +143,10 @@ class TrainManager:
         # comparison function for scores
         self.is_best = lambda score: score < self.best_ckpt_score \
             if self.minimize_metric else score > self.best_ckpt_score
+
+        # for learning with logged feedback
+        if config["data"].get("feedback", None) is not None:
+            self.logger.info("Learning with token-level feedback.")
 
     def _save_checkpoint(self) -> None:
         """
