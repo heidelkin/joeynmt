@@ -3,7 +3,8 @@
 """
 Implementation of a mini-batch.
 """
-
+import numpy as np
+import torch
 
 class Batch:
     """Object for holding a batch of data with mask during training.
@@ -41,6 +42,19 @@ class Batch:
             # we exclude the padded areas from the loss computation
             self.trg_mask = (self.trg != pad_index)
             self.ntokens = (self.trg != pad_index).data.sum().item()
+
+            if hasattr(torch_batch, "weights"):
+                # one weight per token given
+                # pad remaining areas with 0s
+                weights = np.zeros(shape=self.trg.size())
+                for i, weight_seq in enumerate(torch_batch.weights):
+                    for j, w in enumerate(weight_seq):
+                        weights[i,j] = w
+                weights = np.array(weights)
+                self.weights = torch.from_numpy(weights).float().to(
+                    self.trg.device)
+            else:
+                self.weights = None
 
         if use_cuda:
             self._make_cuda()
