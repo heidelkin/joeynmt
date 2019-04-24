@@ -251,7 +251,7 @@ def test(cfg_file,
                         out_file.write(" ".join(hyp)+ "\n")
             print("Translations saved to: {}".format(output_path_set))
 
-
+#pylint: disable=too-many-branches
 def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
     """
     Interactive translation function.
