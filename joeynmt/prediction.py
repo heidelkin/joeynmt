@@ -243,8 +243,12 @@ def test(cfg_file,
         if output_path is not None:
             output_path_set = "{}.{}".format(output_path, data_set_name)
             with open(output_path_set, mode="w", encoding="utf-8") as out_file:
-                for hyp in hypotheses:
-                    out_file.write(hyp + "\n")
+                if cfg["data"].get("post_process", True):
+                    for hyp in hypotheses:
+                        out_file.write(hyp + "\n")
+                else:
+                    for hyp in hypotheses_raw:
+                        out_file.write(" ".join(hyp)+ "\n")
             print("Translations saved to: {}".format(output_path_set))
 
 
@@ -288,7 +292,7 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
             max_output_length=max_output_length, eval_metric="",
             use_cuda=use_cuda, loss_function=None, beam_size=beam_size,
             beam_alpha=beam_alpha)
-        return hypotheses
+        return hypotheses, hypotheses_raw
 
     cfg = load_config(cfg_file)
 
@@ -344,13 +348,17 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
     if not sys.stdin.isatty():
         # file given
         test_data = MonoDataset(path=sys.stdin, ext="", field=src_field)
-        hypotheses = _translate_data(test_data)
+        hypotheses, hypotheses_raw = _translate_data(test_data)
 
         if output_path is not None:
             output_path_set = "{}".format(output_path)
             with open(output_path_set, mode="w", encoding="utf-8") as out_file:
-                for hyp in hypotheses:
-                    out_file.write(hyp + "\n")
+                if cfg["data"].get("post_process", True):
+                    for hyp in hypotheses:
+                        out_file.write(hyp + "\n")
+                else:
+                    for hyp in hypotheses_raw:
+                        out_file.write(" ".join(hyp) + "\n")
             print("Translations saved to: {}".format(output_path_set))
         else:
             for hyp in hypotheses:
@@ -369,8 +377,11 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
                 # every line has to be made into dataset
                 test_data = _load_line_as_data(line=src_input)
 
-                hypotheses = _translate_data(test_data)
-                print("JoeyNMT: {}".format(hypotheses[0]))
+                hypotheses, hypotheses_raw = _translate_data(test_data)
+                if cfg["data"].get("post_process", True):
+                    print("JoeyNMT: {}".format(hypotheses[0]))
+                else:
+                    print("JoeyNMT: {}".format(" ".join(hypotheses_raw[0])))
 
             except (KeyboardInterrupt, EOFError):
                 print("\nBye.")
