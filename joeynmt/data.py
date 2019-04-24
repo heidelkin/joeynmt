@@ -209,7 +209,7 @@ class WeightedTranslationDataset(Dataset):
                            weights_line.strip().split(" ")]
                 if src_line != '' and trg_line != '':
                     # there must be feedback for every token
-                    assert(len(weights) == len(fields[1][1].tokenize(trg_line)))
+                    assert len(weights) == len(fields[1][1].tokenize(trg_line))
                     examples.append(data.Example.fromlist(
                         [src_line, trg_line, weights], fields))
 
