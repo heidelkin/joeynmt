@@ -6,6 +6,7 @@ Implementation of a mini-batch.
 import numpy as np
 import torch
 
+# pylint: disable=too-many-instance-attributes
 class Batch:
     """Object for holding a batch of data with mask during training.
     Input is a batch from a torch text iterator.
@@ -49,7 +50,7 @@ class Batch:
                 weights = np.zeros(shape=self.trg.size())
                 for i, weight_seq in enumerate(torch_batch.weights):
                     for j, w in enumerate(weight_seq):
-                        weights[i,j] = w
+                        weights[i, j] = w
                 weights = np.array(weights)
                 self.weights = torch.from_numpy(weights).float().to(
                     self.trg.device)

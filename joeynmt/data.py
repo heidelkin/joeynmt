@@ -65,6 +65,7 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
         weight_field = data.RawField()
         # token or sentence weights are given for training target
         train_data = WeightedTranslationDataset(
+            level=level,
             path=train_path,
             exts=("." + src_lang, "." + trg_lang, "." + feedback_suffix),
             fields=(src_field, trg_field, weight_field),
@@ -183,13 +184,14 @@ class MonoDataset(Dataset):
 class WeightedTranslationDataset(Dataset):
     """ Defines a parallel dataset with weights for the targets. """
 
-    def __init__(self, path, exts, fields, **kwargs):
+    def __init__(self, path, exts, fields, level, **kwargs):
         """Create a TranslationDataset given paths and fields.
 
         :param path: Prefix of path to the data file
         :param ext: Containing the extension to path for this language.
         :param field: Containing the fields that will be used for data.
         :param kwargs: Passed to the constructor of data.Dataset.
+        :param level: char or word or bpe
         """
 
         if not isinstance(fields[0], (tuple, list)):
@@ -209,7 +211,19 @@ class WeightedTranslationDataset(Dataset):
                            weights_line.strip().split(" ")]
                 if src_line != '' and trg_line != '':
                     # there must be feedback for every token
-                    assert(len(weights) == len(fields[1][1].tokenize(trg_line)))
+                    if level == "char":
+                        char_weights = []
+                        # distribute feedback from tokens over chars
+                        assert len(trg_line.split()) == len(weights)
+                        for trg_token, token_weight in zip(trg_line.split(),
+                                                           weights):
+                            # replicate weight for every char in trg token
+                            # and for following whitespace
+                            char_weights.extend(
+                                (len(trg_token)+1)*[token_weight])
+                        # remove last added weight for whitespace
+                        weights = char_weights[:-1]
+                    assert len(weights) == len(fields[1][1].tokenize(trg_line))
                     examples.append(data.Example.fromlist(
                         [src_line, trg_line, weights], fields))
 

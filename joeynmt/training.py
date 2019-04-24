@@ -15,7 +15,6 @@ import numpy as np
 
 import torch
 from torch import Tensor
-import torch.nn as nn
 
 from torchtext.data import Dataset
 
@@ -101,6 +100,7 @@ class TrainManager:
             raise ConfigurationError(
                 "Invalid setting for 'early_stopping_metric', "
                 "valid options: 'loss', 'ppl', 'eval_metric'.")
+        self.post_process = config["data"].get("post_process", True)
 
         # learning rate scheduling
         self.scheduler, self.scheduler_step_at = build_scheduler(
@@ -336,7 +336,9 @@ class TrainManager:
                             valid_score, valid_loss, valid_ppl, valid_duration)
 
                     # store validation set outputs
-                    self._store_outputs(valid_hypotheses)
+                    self._store_outputs(
+                        valid_hypotheses if self.post_process
+                        else [" ".join(v) for v in valid_hypotheses_raw])
 
                     # store attention plots for selected valid sentences
                     store_attention_plots(attentions=valid_attention_scores,
