@@ -95,7 +95,8 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
 
             # sort outputs back to original order
             all_outputs.extend(output[sort_reverse_index])
-            valid_logprobs.extend(logprobs[sort_reverse_index])
+            if logprobs is not None:
+                valid_logprobs.extend(logprobs[sort_reverse_index])
             valid_attention_scores.extend(
                 attention_scores[sort_reverse_index]
                 if attention_scores is not None else [])
@@ -218,7 +219,7 @@ def test(cfg_file,
 
         #pylint: disable=unused-variable
         score, loss, ppl, sources, sources_raw, references, hypotheses, \
-        hypotheses_raw, attention_scores = validate_on_data(
+        hypotheses_raw, attention_scores, logprobs = validate_on_data(
             model, data=data_set, batch_size=batch_size, level=level,
             max_output_length=max_output_length, eval_metric=eval_metric,
             use_cuda=use_cuda, loss_function=None, beam_size=beam_size,

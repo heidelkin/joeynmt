@@ -1,9 +1,10 @@
 # coding: utf-8
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
 import numpy as np
-from typing import Optional
 
 from joeynmt.helpers import tile
 from joeynmt.decoders import Decoder
@@ -13,7 +14,7 @@ from joeynmt.embeddings import Embeddings
 def greedy(src_mask: Tensor, embed: Embeddings, bos_index: int, eos_index: int,
            max_output_length: int, decoder: Decoder,
            encoder_output: Tensor, encoder_hidden: Tensor,
-           return_logp: bool=False)\
+           return_logp: bool = False)\
         -> (np.array, np.array, Optional[np.array]):
     """
     Greedy decoding: in each step, choose the word that gets highest score.
@@ -80,12 +81,12 @@ def greedy(src_mask: Tensor, embed: Embeddings, bos_index: int, eos_index: int,
     return stacked_output, stacked_attention_scores, log_probs
 
 
-# pylint: disable=too-many-statements
+# pylint: disable=too-many-statements, too-many-arguments
 def beam_search(decoder: Decoder, size: int, bos_index: int, eos_index: int,
                 pad_index: int, encoder_output: Tensor,
                 encoder_hidden: Tensor, src_mask: Tensor,
                 max_output_length: int, alpha: float, embed: Embeddings,
-                n_best: int = 1, return_logp: bool=False) \
+                n_best: int = 1, return_logp: bool = False) \
         -> (np.array, np.array, Optional[np.array]):
     """
     Beam search with size k. Follows OpenNMT-py implementation.

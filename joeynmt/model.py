@@ -2,9 +2,8 @@
 """
 Module to represents whole models
 """
-
-import numpy as np
 from typing import Optional
+import numpy as np
 
 import torch.nn as nn
 from torch import Tensor
@@ -142,7 +141,7 @@ class Model(nn.Module):
         return batch_loss
 
     def run_batch(self, batch: Batch, max_output_length: int, beam_size: int,
-                  beam_alpha: float, return_logp: bool=False) \
+                  beam_alpha: float, return_logp: bool = False) \
             -> (np.array, np.array, Optional[np.array]):
         """
         Get outputs and attentions scores for a given batch
