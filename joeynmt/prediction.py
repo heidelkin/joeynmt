@@ -25,9 +25,10 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
                      use_cuda: bool, max_output_length: int,
                      level: str, eval_metric: Optional[str],
                      loss_function: torch.nn.Module = None,
-                     beam_size: int = 0, beam_alpha: int = -1) \
+                     beam_size: int = 0, beam_alpha: int = -1,
+                     return_logp: bool = False) \
         -> (float, float, float, List[str], List[List[str]], List[str],
-            List[str], List[List[str]], List[np.array]):
+            List[str], List[List[str]], List[np.array], Optional[np.array]):
     """
     Generate translations for the given data.
     If `loss_function` is not None and references are given,
@@ -46,6 +47,7 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
         If 0 then greedy decoding (default).
     :param beam_alpha: beam search alpha for length penalty,
         disabled if set to -1 (default).
+    :param return_logp: keep track of log probabilities of hypotheses as well
 
     :return:
         - current_valid_score: current validation score [eval_metric],
@@ -57,6 +59,7 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
         - valid_hypotheses: validation_hypotheses,
         - decoded_valid: raw validation hypotheses (before post-processing),
         - valid_attention_scores: attention scores for validation hypotheses
+        - valid_logprobs: log probabilities of validation hypotheses
     """
     valid_iter = make_data_iter(dataset=data, batch_size=batch_size,
                                 shuffle=False, train=False)
@@ -67,6 +70,7 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
     # don't track gradients during validation
     with torch.no_grad():
         all_outputs = []
+        valid_logprobs = []
         valid_attention_scores = []
         total_loss = 0
         total_ntokens = 0
@@ -85,12 +89,13 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
                 total_ntokens += batch.ntokens
 
             # run as during inference to produce translations
-            output, attention_scores = model.run_batch(
+            output, attention_scores, logprobs = model.run_batch(
                 batch=batch, beam_size=beam_size, beam_alpha=beam_alpha,
-                max_output_length=max_output_length)
+                max_output_length=max_output_length, return_logp=return_logp)
 
             # sort outputs back to original order
             all_outputs.extend(output[sort_reverse_index])
+            valid_logprobs.extend(logprobs[sort_reverse_index])
             valid_attention_scores.extend(
                 attention_scores[sort_reverse_index]
                 if attention_scores is not None else [])
@@ -145,7 +150,7 @@ def validate_on_data(model: Model, data: Dataset, batch_size: int,
 
     return current_valid_score, valid_loss, valid_ppl, valid_sources, \
         valid_sources_raw, valid_references, valid_hypotheses, \
-        decoded_valid, valid_attention_scores
+        decoded_valid, valid_attention_scores, valid_logprobs
 
 
 def test(cfg_file,
@@ -287,11 +292,11 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
         """ Translates given dataset, using parameters from outer scope. """
         # pylint: disable=unused-variable
         score, loss, ppl, sources, sources_raw, references, hypotheses, \
-        hypotheses_raw, attention_scores = validate_on_data(
+        hypotheses_raw, attention_scores, log_probs = validate_on_data(
             model, data=test_data, batch_size=batch_size, level=level,
             max_output_length=max_output_length, eval_metric="",
             use_cuda=use_cuda, loss_function=None, beam_size=beam_size,
-            beam_alpha=beam_alpha)
+            beam_alpha=beam_alpha, return_logp=return_logp)
         return hypotheses, hypotheses_raw
 
     cfg = load_config(cfg_file)
@@ -341,9 +346,11 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
     if "testing" in cfg.keys():
         beam_size = cfg["testing"].get("beam_size", 0)
         beam_alpha = cfg["testing"].get("alpha", -1)
+        return_logp = cfg["testing"].get("return_logp", False)
     else:
         beam_size = 0
         beam_alpha = -1
+        return_logp = False
 
     if not sys.stdin.isatty():
         # file given

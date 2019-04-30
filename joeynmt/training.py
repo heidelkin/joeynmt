@@ -147,6 +147,7 @@ class TrainManager:
         # for learning with logged feedback
         if config["data"].get("feedback", None) is not None:
             self.logger.info("Learning with token-level feedback.")
+        self.return_logp = config["testing"].get("return_logp", False)
 
     def _save_checkpoint(self) -> None:
         """
@@ -274,14 +275,15 @@ class TrainManager:
 
                     valid_score, valid_loss, valid_ppl, valid_sources, \
                         valid_sources_raw, valid_references, valid_hypotheses, \
-                        valid_hypotheses_raw, valid_attention_scores = \
-                        validate_on_data(
+                        valid_hypotheses_raw, valid_attention_scores, \
+                        valid_logps = validate_on_data(
                             batch_size=self.batch_size, data=valid_data,
                             eval_metric=self.eval_metric,
                             level=self.level, model=self.model,
                             use_cuda=self.use_cuda,
                             max_output_length=self.max_output_length,
-                            loss_function=self.loss)
+                            loss_function=self.loss,
+                            return_logp=self.return_logp)
 
                     self.tb_writer.add_scalar("valid/valid_loss",
                                               valid_loss, self.steps)
@@ -338,7 +340,9 @@ class TrainManager:
                     # store validation set outputs
                     self._store_outputs(
                         valid_hypotheses if self.post_process
-                        else [" ".join(v) for v in valid_hypotheses_raw])
+                        else [" ".join(v) for v in valid_hypotheses_raw],
+                        valid_logps if self.return_logp else None
+                    )
 
                     # store attention plots for selected valid sentences
                     store_attention_plots(attentions=valid_attention_scores,
@@ -479,17 +483,24 @@ class TrainManager:
                 self.logger.debug("\tRaw hypothesis: %s", hypotheses_raw[p])
             self.logger.debug("\tHypothesis: %s", hypotheses[p])
 
-    def _store_outputs(self, hypotheses: List[str]) -> None:
+    def _store_outputs(self, hypotheses: List[str], logps: List[float]=None) \
+            -> None:
         """
         Write current validation outputs to file in `self.model_dir.`
 
         :param hypotheses: list of strings
+        :param logps: list of floats
         """
         current_valid_output_file = "{}/{}.hyps".format(self.model_dir,
                                                         self.steps)
         with open(current_valid_output_file, 'w') as opened_file:
             for hyp in hypotheses:
                 opened_file.write("{}\n".format(hyp))
+
+        if logps is not None:
+            with open(current_valid_output_file+".logp", 'w') as opened_file:
+                for l in logps:
+                    opened_file.write("{}\n".format(l))
 
 
 def train(cfg_file: str) -> None:
@@ -554,18 +565,21 @@ def train(cfg_file: str) -> None:
         if "testing" in cfg.keys():
             beam_size = cfg["testing"].get("beam_size", 0)
             beam_alpha = cfg["testing"].get("alpha", -1)
+            return_logp = cfg["testing"].get("return_logp", False)
         else:
             beam_size = 0
             beam_alpha = -1
+            return_logp = False
 
         # pylint: disable=unused-variable
         score, loss, ppl, sources, sources_raw, references, hypotheses, \
-            hypotheses_raw, attention_scores = validate_on_data(
+            hypotheses_raw, attention_scores, log_probs = validate_on_data(
                 data=test_data, batch_size=trainer.batch_size,
                 eval_metric=trainer.eval_metric, level=trainer.level,
                 max_output_length=trainer.max_output_length,
                 model=model, use_cuda=trainer.use_cuda, loss_function=None,
-                beam_size=beam_size, beam_alpha=beam_alpha)
+                beam_size=beam_size, beam_alpha=beam_alpha,
+                return_logp=return_logp)
 
         if "trg" in test_data.fields:
             decoding_description = "Greedy decoding" if beam_size == 0 else \
@@ -583,8 +597,16 @@ def train(cfg_file: str) -> None:
             trainer.model_dir, "test", cfg["data"]["trg"])
         with open(output_path_set, mode="w", encoding="utf-8") as f:
             for h in hypotheses:
-                f.write(h + "\n")
+                f.write("{}\n".format(h))
         trainer.logger.info("Test translations saved to: %s", output_path_set)
+
+        if return_logp:
+            output_path_set_logp = output_path_set + ".logp"
+            with open(output_path_set_logp, mode="w", encoding="utf-8") as f:
+                for l in log_probs:
+                    f.write("{}\n".format(l))
+            trainer.logger.info("Test log probs saved to: %s",
+                                output_path_set_logp)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Joey-NMT')
