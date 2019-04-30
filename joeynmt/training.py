@@ -483,7 +483,7 @@ class TrainManager:
                 self.logger.debug("\tRaw hypothesis: %s", hypotheses_raw[p])
             self.logger.debug("\tHypothesis: %s", hypotheses[p])
 
-    def _store_outputs(self, hypotheses: List[str], logps: List[float]=None) \
+    def _store_outputs(self, hypotheses: List[str], logps: List[float] = None) \
             -> None:
         """
         Write current validation outputs to file in `self.model_dir.`
