@@ -4,6 +4,7 @@ Module to represents whole models
 """
 
 import numpy as np
+from typing import Optional
 
 import torch.nn as nn
 from torch import Tensor
@@ -141,7 +142,8 @@ class Model(nn.Module):
         return batch_loss
 
     def run_batch(self, batch: Batch, max_output_length: int, beam_size: int,
-                  beam_alpha: float) -> (np.array, np.array):
+                  beam_alpha: float, return_logp: bool=False) \
+            -> (np.array, np.array, Optional[np.array]):
         """
         Get outputs and attentions scores for a given batch
 
@@ -149,8 +151,11 @@ class Model(nn.Module):
         :param max_output_length: maximum length of hypotheses
         :param beam_size: size of the beam for beam search, if 0 use greedy
         :param beam_alpha: alpha value for beam search
-        :return: stacked_output: hypotheses for batch,
-            stacked_attention_scores: attention scores for batch
+        :param return_logp: keep track of log probabilities as well
+        :return:
+            - stacked_output: hypotheses for batch,
+            - stacked_attention_scores: attention scores for batch
+            - log_probs: log probabilities for batch hypotheses
         """
         encoder_output, encoder_hidden = self.encode(
             batch.src, batch.src_lengths,
@@ -162,23 +167,24 @@ class Model(nn.Module):
 
         # greedy decoding
         if beam_size == 0:
-            stacked_output, stacked_attention_scores = greedy(
+            stacked_output, stacked_attention_scores, logprobs = greedy(
                 encoder_hidden=encoder_hidden, encoder_output=encoder_output,
                 src_mask=batch.src_mask, embed=self.trg_embed,
                 bos_index=self.bos_index, decoder=self.decoder,
-                max_output_length=max_output_length)
+                max_output_length=max_output_length, eos_index=self.eos_index,
+                return_logp=return_logp)
             # batch, time, max_src_length
-        else:  # beam size
-            stacked_output, stacked_attention_scores = \
+        else:  # beam size > 0
+            stacked_output, stacked_attention_scores, logprobs = \
                 beam_search(size=beam_size, encoder_output=encoder_output,
                             encoder_hidden=encoder_hidden,
                             src_mask=batch.src_mask, embed=self.trg_embed,
                             max_output_length=max_output_length,
                             alpha=beam_alpha, eos_index=self.eos_index,
                             pad_index=self.pad_index, bos_index=self.bos_index,
-                            decoder=self.decoder)
+                            decoder=self.decoder, return_logp=return_logp)
 
-        return stacked_output, stacked_attention_scores
+        return stacked_output, stacked_attention_scores, logprobs
 
     def __repr__(self) -> str:
         """

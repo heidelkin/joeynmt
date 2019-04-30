@@ -3,37 +3,45 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 import numpy as np
+from typing import Optional
 
 from joeynmt.helpers import tile
 from joeynmt.decoders import Decoder
 from joeynmt.embeddings import Embeddings
 
 
-def greedy(src_mask: Tensor, embed: Embeddings, bos_index: int,
+def greedy(src_mask: Tensor, embed: Embeddings, bos_index: int, eos_index: int,
            max_output_length: int, decoder: Decoder,
-           encoder_output: Tensor, encoder_hidden: Tensor)\
-        -> (np.array, np.array):
+           encoder_output: Tensor, encoder_hidden: Tensor,
+           return_logp: bool=False)\
+        -> (np.array, np.array, Optional[np.array]):
     """
     Greedy decoding: in each step, choose the word that gets highest score.
 
     :param src_mask: mask for source inputs, 0 for positions after </s>
     :param embed: target embedding
     :param bos_index: index of <s> in the vocabulary
+    :param eos_index: index of </s> in the vocabulary
     :param max_output_length: maximum length for the hypotheses
     :param decoder: decoder to use for greedy decoding
     :param encoder_output: encoder hidden states for attention
     :param encoder_hidden: encoder last state for decoder initialization
+    :param return_logp: return log probability of output as well,
+        excluding predictions after </s>
     :return:
         - stacked_output: output hypotheses (2d array of indices),
         - stacked_attention_scores: attention scores (3d array)
+        - log_probs: log probabilities of hypotheses (vector, optional)
     """
     batch_size = src_mask.size(0)
     prev_y = src_mask.new_full(size=[batch_size, 1], fill_value=bos_index,
                                dtype=torch.long)
     output = []
     attention_scores = []
+    log_probs = np.zeros(batch_size)
     hidden = None
     prev_att_vector = None
+    end = np.zeros(batch_size)
 
     # pylint: disable=unused-variable
     for t in range(max_output_length):
@@ -50,13 +58,26 @@ def greedy(src_mask: Tensor, embed: Embeddings, bos_index: int,
 
         # greedy decoding: choose arg max over vocabulary in each step
         next_word = torch.argmax(out, dim=-1)  # batch x time=1
-        output.append(next_word.squeeze(1).cpu().numpy())
+        pred = next_word.squeeze(1).cpu().numpy()
+        output.append(pred)
         prev_y = next_word
         attention_scores.append(att_probs.squeeze(1).cpu().numpy())
+        end += (pred == eos_index)  # check if eos reached
+
+        if return_logp:
+            end_mask = end < 1  # True for tokens up till eos (incl), then False
+            log_prob = F.log_softmax(out, dim=2).squeeze(1)
+            selected_log_prob = log_prob.index_select(
+                1, next_word.squeeze())[:, 0].cpu().numpy()
+            log_probs += end_mask*selected_log_prob
+
+        # stop when all hyps in batch reach eos
+        if (end > 1).sum() >= batch_size:
+            break
         # batch, max_src_lengths
     stacked_output = np.stack(output, axis=1)  # batch, time
     stacked_attention_scores = np.stack(attention_scores, axis=1)
-    return stacked_output, stacked_attention_scores
+    return stacked_output, stacked_attention_scores, log_probs
 
 
 # pylint: disable=too-many-statements
@@ -64,7 +85,8 @@ def beam_search(decoder: Decoder, size: int, bos_index: int, eos_index: int,
                 pad_index: int, encoder_output: Tensor,
                 encoder_hidden: Tensor, src_mask: Tensor,
                 max_output_length: int, alpha: float, embed: Embeddings,
-                n_best: int = 1) -> (np.array, np.array):
+                n_best: int = 1, return_logp: bool=False) \
+        -> (np.array, np.array, Optional[np.array]):
     """
     Beam search with size k. Follows OpenNMT-py implementation.
     In each decoding step, find the k most likely partial hypotheses.
@@ -81,9 +103,11 @@ def beam_search(decoder: Decoder, size: int, bos_index: int, eos_index: int,
     :param alpha: `alpha` factor for length penalty
     :param embed:
     :param n_best: return this many hypotheses, <= beam
+    :param return_logp: return the log probabilities as well
     :return:
         - stacked_output: output hypotheses (2d array of indices),
         - stacked_attention_scores: attention scores (3d array)
+        - log_probs: hypotheses log probs of hypotheses (vector)
     """
     # init
     batch_size = src_mask.size(0)
@@ -251,6 +275,10 @@ def beam_search(decoder: Decoder, size: int, bos_index: int, eos_index: int,
     final_outputs = pad_and_stack_hyps([r[0].cpu().numpy() for r in
                                         results["predictions"]],
                                        pad_value=pad_index)
+    if return_logp:
+        final_logprobs = np.array([r[0].item() for r in results["scores"]])
+    else:
+        final_logprobs = None
 
-    # TODO also return attention scores and probabilities
-    return final_outputs, None
+    # TODO also return attention scores
+    return final_outputs, None, final_logprobs
