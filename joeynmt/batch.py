@@ -48,10 +48,13 @@ class Batch:
                 # one weight per token given
                 # pad remaining areas with 0s
                 weights = np.zeros(shape=self.trg.size())
+                # iterate over batch
                 for i, weight_seq in enumerate(torch_batch.weights):
+                    # iterate over trg tokens
                     for j, w in enumerate(weight_seq):
                         weights[i, j] = w
-                weights = np.array(weights)
+                    # add one artificial weight for </s>
+                    weights[i, len(weight_seq)] = 1.0
                 self.weights = torch.from_numpy(weights).float().to(
                     self.trg.device)
             else:
@@ -73,6 +76,8 @@ class Batch:
             self.trg_input = self.trg_input.cuda()
             self.trg = self.trg.cuda()
             self.trg_mask = self.trg_mask.cuda()
+        if self.weights is not None:
+            self.weights = self.weights.cuda()
 
     def sort_by_src_lengths(self):
         """
