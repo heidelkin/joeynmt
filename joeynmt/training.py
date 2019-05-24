@@ -75,6 +75,10 @@ class TrainManager:
         self.optimizer = build_optimizer(config=train_config,
                                          parameters=model.parameters())
 
+        # save checkpoint by epoch of training - used in case of no valid_data
+        self.checkpoint_epochfreq = train_config.get("checkpoint_epochfreq", 10000)
+        self.last_epoch = 0
+
         # validation & early stopping
         self.validation_freq = train_config.get("validation_freq", 1000)
         self.log_valid_sents = train_config.get("print_valid_sents", [0, 1, 2])
@@ -149,6 +153,31 @@ class TrainManager:
             self.logger.info("Learning with token-level feedback.")
         self.return_logp = config["testing"].get("return_logp", False)
 
+    def _save_checkpoint_epochfreq(self) -> None:
+        """
+        Save the mode's current parameters and the training state to a
+        checkpoint by epoch_frequency
+
+        It does not follow the queue of _save_checkpoint
+        """
+        model_path = "{}/{}.ckpt".format(self.model_dir, self.last_epoch)
+
+        # TODO: Include epoch as a key-value pair to state?
+        state = {
+            "steps": self.steps,
+            "total_tokens": self.total_tokens,
+            "best_ckpt_score": self.best_ckpt_score,
+            "best_ckpt_iteration": self.best_ckpt_iteration,
+            "model_state": self.model.state_dict(),
+            "optimizer_state": self.optimizer.state_dict(),
+            "scheduler_state": self.scheduler.state_dict() if \
+            self.scheduler is not None else None,
+        }
+        torch.save(state, model_path)
+        
+        symlink_update("{}.ckpt".format(self.last_epoch),
+                       "{}/last.ckpt".format(self.model_dir))
+
     def _save_checkpoint(self) -> None:
         """
         Save the model's current parameters and the training state to a
@@ -161,6 +190,7 @@ class TrainManager:
 
         """
         model_path = "{}/{}.ckpt".format(self.model_dir, self.steps)
+
         state = {
             "steps": self.steps,
             "total_tokens": self.total_tokens,
@@ -227,6 +257,7 @@ class TrainManager:
                                     train=True, shuffle=self.shuffle)
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
+            self.last_epoch += 1
 
             if self.scheduler is not None and self.scheduler_step_at == "epoch":
                 self.scheduler.step(epoch=epoch_no)
@@ -270,7 +301,9 @@ class TrainManager:
                     total_valid_duration = 0
 
                 # validate on the entire dev set
-                if self.steps % self.validation_freq == 0 and update:
+                if valid_data is not None and \
+                    self.steps % self.validation_freq == 0 and update:
+
                     valid_start_time = time.time()
 
                     valid_score, valid_loss, valid_ppl, valid_sources, \
@@ -357,6 +390,12 @@ class TrainManager:
 
                 if self.stop:
                     break
+
+            if epoch_no % self.checkpoint_epochfreq == 0:
+                ## save the ckpt in case of no valid_data
+                self.logger.info("Epoch requirement met - saving new checkpoint.")
+                self._save_checkpoint_epochfreq()
+
             if self.stop:
                 self.logger.info(
                     'Training ended since minimum lr %f was reached.',
@@ -367,9 +406,11 @@ class TrainManager:
                              epoch_loss)
         else:
             self.logger.info('Training ended after %d epochs.', epoch_no+1)
-        self.logger.info('Best validation result at step %d: %f %s.',
-                         self.best_ckpt_iteration, self.best_ckpt_score,
-                         self.early_stopping_metric)
+
+        if valid_data is not None:
+            self.logger.info('Best validation result at step %d: %f %s.',
+                             self.best_ckpt_iteration, self.best_ckpt_score,
+                             self.early_stopping_metric)
 
     def _train_batch(self, batch: Batch, update: bool = True) -> Tensor:
         """
@@ -547,8 +588,13 @@ def train(cfg_file: str) -> None:
     if test_data is not None:
 
         # load checkpoint
-        checkpoint_path = "{}/{}.ckpt".format(
-            trainer.model_dir, trainer.best_ckpt_iteration)
+        if dev_data is not None:
+            checkpoint_path = "{}/{}.ckpt".format(
+                trainer.model_dir, trainer.best_ckpt_iteration)
+        else:
+            ### Load the latest checkpoint by epoch
+            checkpoint_path = "{}/{}.ckpt".format(
+                trainer.model_dir, trainer.last_epoch)
         try:
             trainer.init_from_checkpoint(checkpoint_path)
         except AssertionError:

@@ -137,9 +137,10 @@ def log_data_info(train_data: Dataset, valid_data: Dataset, test_data: Dataset,
     :param trg_vocab:
     :param logging_function:
     """
+
     logging_function(
         "Data set sizes: \n\ttrain %d,\n\tvalid %d,\n\ttest %d",
-            len(train_data), len(valid_data),
+            len(train_data), len(valid_data) if valid_data is not None else 0,
             len(test_data) if test_data is not None else 0)
 
     logging_function("First training example:\n\t[SRC] %s\n\t[TRG] %s",

@@ -39,7 +39,9 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
     src_lang = data_cfg["src"]
     trg_lang = data_cfg["trg"]
     train_path = data_cfg["train"]
-    dev_path = data_cfg["dev"]
+
+    ## changed to allow no dev_path
+    dev_path = data_cfg.get("dev", None)
     feedback_suffix = data_cfg.get("feedback", None)
     test_path = data_cfg.get("test", None)
     level = data_cfg["level"]
@@ -97,9 +99,18 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
     trg_vocab = build_vocab(field="trg", min_freq=trg_min_freq,
                             max_size=trg_max_size,
                             dataset=train_data, vocab_file=trg_vocab_file)
-    dev_data = TranslationDataset(path=dev_path,
-                                  exts=("." + src_lang, "." + trg_lang),
-                                  fields=(src_field, trg_field))
+
+    # modified for no dev set cases
+    dev_data = None
+    if dev_path is not None:
+        if os.path.isfile(dev_path + "." + trg_lang):
+            dev_data = TranslationDataset(path=dev_path,
+                                          exts=("." + src_lang, "." + trg_lang),
+                                          fields=(src_field, trg_field))
+        else:
+            dev_data = MonoDataset(path=dev_path, ext="." + src_lang,
+                                   field=src_field)
+
     test_data = None
     if test_path is not None:
         # check if target exists

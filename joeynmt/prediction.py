@@ -183,6 +183,7 @@ def test(cfg_file,
         try:
             step = ckpt.split(model_dir+"/")[1].split(".ckpt")[0]
         except IndexError:
+            # TODO: incorporate "last" as well 
             step = "best"
 
     batch_size = cfg["training"]["batch_size"]
@@ -216,6 +217,9 @@ def test(cfg_file,
         beam_alpha = -1
 
     for data_set_name, data_set in data_to_predict.items():
+        if data_set is None:
+            # e.g. no valid_data
+            continue
 
         #pylint: disable=unused-variable
         score, loss, ppl, sources, sources_raw, references, hypotheses, \
