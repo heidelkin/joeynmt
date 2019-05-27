@@ -183,7 +183,6 @@ def test(cfg_file,
         try:
             step = ckpt.split(model_dir+"/")[1].split(".ckpt")[0]
         except IndexError:
-            # TODO: incorporate "last" as well 
             step = "best"
 
     batch_size = cfg["training"]["batch_size"]
