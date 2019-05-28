@@ -154,7 +154,7 @@ class TrainManager:
         self.return_logp = config["testing"].get("return_logp", False)
 
 
-    def _save_checkpoint(self, epoch_no=None) -> None:
+    def _save_checkpoint(self) -> None:
         """
         Save the model's current parameters and the training state to a
         checkpoint.
@@ -165,10 +165,7 @@ class TrainManager:
         and optimizer and scheduler states.
 
         """
-        ## Add epoch_no here to file name to differentiate it with 
-        ## those saved by validation_freq?
-        counts = 'epoch.{}'.format(epoch_no) if epoch_no is not None else self.steps
-        model_path = "{}/{}.ckpt".format(self.model_dir, counts)
+        model_path = "{}/{}.ckpt".format(self.model_dir, self.steps)
 
         state = {
             "steps": self.steps,
@@ -192,7 +189,7 @@ class TrainManager:
         self.ckpt_queue.put(model_path)
 
         # create/modify symbolic link for best checkpoint
-        symlink_update("{}.ckpt".format(counts),
+        symlink_update("{}.ckpt".format(self.steps),
                        "{}/best.ckpt".format(self.model_dir))
 
     def init_from_checkpoint(self, path: str) -> None:
@@ -366,13 +363,18 @@ class TrainManager:
                                           tb_writer=self.tb_writer,
                                           steps=self.steps)
 
+                if self.save_freq > 0 and self.steps % self.save_freq == 0:
+                    ## Drop checkpoint by number of batches 
+                    ## Take care of batch multipler in to description
+                    self.logger.info("Saving new checkpoint!"
+                                     "Batches passed:{}"
+                                     "Number of updates:{}".format(
+                                     self.batch_multiplier*self.steps, 
+                                     self.steps))
+                    self._save_checkpoint()
+
                 if self.stop:
                     break
-
-            if self.save_freq > 0 and epoch_no % self.save_freq == 0:
-                ## save the ckpt in case of no valid_data
-                self.logger.info("Epoch requirement met - saving new checkpoint.")
-                self._save_checkpoint(epoch_no=epoch_no+1)
 
             if self.stop:
                 self.logger.info(
