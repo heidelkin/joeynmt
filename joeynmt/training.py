@@ -24,7 +24,8 @@ from joeynmt.model import build_model
 from joeynmt.batch import Batch
 from joeynmt.helpers import log_data_info, load_config, log_cfg, \
     store_attention_plots, load_checkpoint, make_model_dir, \
-    make_logger, set_seed, symlink_update, ConfigurationError
+    make_logger, set_seed, symlink_update, ConfigurationError, \
+    get_latest_checkpoint
 from joeynmt.model import Model
 from joeynmt.prediction import validate_on_data
 from joeynmt.data import load_data, make_data_iter
@@ -74,6 +75,9 @@ class TrainManager:
         self.clip_grad_fun = build_gradient_clipper(config=train_config)
         self.optimizer = build_optimizer(config=train_config,
                                          parameters=model.parameters())
+
+        # save checkpoint by epoch 
+        self.save_freq = train_config.get("save_freq", -1)
 
         # validation & early stopping
         self.validation_freq = train_config.get("validation_freq", 1000)
@@ -149,6 +153,7 @@ class TrainManager:
             self.logger.info("Learning with token-level feedback.")
         self.return_logp = config["testing"].get("return_logp", False)
 
+
     def _save_checkpoint(self) -> None:
         """
         Save the model's current parameters and the training state to a
@@ -161,6 +166,7 @@ class TrainManager:
 
         """
         model_path = "{}/{}.ckpt".format(self.model_dir, self.steps)
+
         state = {
             "steps": self.steps,
             "total_tokens": self.total_tokens,
@@ -270,7 +276,9 @@ class TrainManager:
                     total_valid_duration = 0
 
                 # validate on the entire dev set
-                if self.steps % self.validation_freq == 0 and update:
+                if valid_data is not None and \
+                    self.steps % self.validation_freq == 0 and update:
+
                     valid_start_time = time.time()
 
                     valid_score, valid_loss, valid_ppl, valid_sources, \
@@ -355,8 +363,19 @@ class TrainManager:
                                           tb_writer=self.tb_writer,
                                           steps=self.steps)
 
+                if self.save_freq > 0 and self.steps % self.save_freq == 0:
+                    ## Drop checkpoint by number of batches 
+                    ## Take care of batch multipler in to description
+                    self.logger.info("Saving new checkpoint!"
+                                     "Batches passed:{}"
+                                     "Number of updates:{}".format(
+                                     self.batch_multiplier*self.steps, 
+                                     self.steps))
+                    self._save_checkpoint()
+
                 if self.stop:
                     break
+
             if self.stop:
                 self.logger.info(
                     'Training ended since minimum lr %f was reached.',
@@ -367,9 +386,11 @@ class TrainManager:
                              epoch_loss)
         else:
             self.logger.info('Training ended after %d epochs.', epoch_no+1)
-        self.logger.info('Best validation result at step %d: %f %s.',
-                         self.best_ckpt_iteration, self.best_ckpt_score,
-                         self.early_stopping_metric)
+
+        if valid_data is not None:
+            self.logger.info('Best validation result at step %d: %f %s.',
+                             self.best_ckpt_iteration, self.best_ckpt_score,
+                             self.early_stopping_metric)
 
     def _train_batch(self, batch: Batch, update: bool = True) -> Tensor:
         """
@@ -547,8 +568,12 @@ def train(cfg_file: str) -> None:
     if test_data is not None:
 
         # load checkpoint
-        checkpoint_path = "{}/{}.ckpt".format(
-            trainer.model_dir, trainer.best_ckpt_iteration)
+        if trainer.best_ckpt_iteration > 0:
+            checkpoint_path = "{}/{}.ckpt".format(
+                trainer.model_dir, trainer.best_ckpt_iteration)
+        else:
+            ## For save_checkpoint by save_freq
+            checkpoint_path = get_latest_checkpoint(trainer.model_dir)
         try:
             trainer.init_from_checkpoint(checkpoint_path)
         except AssertionError:
