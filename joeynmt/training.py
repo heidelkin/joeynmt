@@ -5,6 +5,7 @@ Training module
 """
 
 import argparse
+from collections import OrderedDict
 import time
 import shutil
 from typing import List
@@ -73,8 +74,14 @@ class TrainManager:
         # optimization
         self.learning_rate_min = train_config.get("learning_rate_min", 1.0e-8)
         self.clip_grad_fun = build_gradient_clipper(config=train_config)
+
+        # re-order the model parameters by name before initialisation of optimizer
+        # Reference: https://github.com/pytorch/pytorch/issues/1489
+        all_params = list(model.named_parameters())
+        sorted_params = sorted(all_params)
+        sorted_params = OrderedDict(sorted_params)
         self.optimizer = build_optimizer(config=train_config,
-                                         parameters=model.parameters())
+                                         parameters=sorted_params.values())
 
         # save checkpoint by epoch 
         self.save_freq = train_config.get("save_freq", -1)
