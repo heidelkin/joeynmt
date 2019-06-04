@@ -2,6 +2,22 @@
 
 """
 To distribute token-level rewards to sub-word units.
+
+Example: 
+    File from database: ["Today", "is", "not"]
+    Reward from database: ["1", "0", "1"]
+    
+    Preprocess the above file using trained bpe:
+    bpe = ["To@@ ", "day", "is", "n@@", t"]
+
+    Output (Reward): ["1", "1", "0", "1", "1"]
+
+Define: bpe_suffix - the token splitted after "@@"
+        bpe_prefix - the part with "@@" 
+        Example:
+            "To@@" is bpe_prefix where "day" is its suffix
+
+        unsplit - Token in non-bpe format, e.g. "To@@ " and "day"
 """
 
 import argparse
@@ -21,6 +37,7 @@ def main(args):
 
         trans = bpe_in.readlines()
         rewards = fbkin.readlines()
+        assert(len(trans)==len(rewards))
 
         for idx, (sent, reward) in enumerate(zip(trans, rewards)):
             reward_tok = reward.split()
@@ -29,33 +46,42 @@ def main(args):
                 # No sub-words in this sentence
                 bpe_reward = reward_tok
             else:
-                sent_str = sent.replace("@@ ", "")
+                sent_unsplit_str = sent.replace("@@ ", "")
                 sent_tok = sent.split()
-                assert(len(sent_str.split())==len(reward_tok)), \
-                    "input sentence length should be equal to number of reward"
+                assert(len(sent_unsplit_str.split())==len(reward_tok)), \
+                    "Input sentence without BPE splitting should be of "\
+                    "equal length to number of reward"
 
                 if idx % args.print_interval == 0:
                     print("sentence (post-process bpe):{}".format(
-                          sent_str[:-1]))
+                          sent_unsplit_str[:-1]))
                     print('input reward:{}'.format(" ".join(reward_tok)))
 
-                loc_bpe = [loc for loc, tok in enumerate(sent_tok) 
-                            if "@@" in tok]
-                loc_bpe_in_original = [bpeloc - len(loc_bpe[:idx]) 
-                                        for idx, bpeloc in enumerate(loc_bpe)]
-                loc_bpe_suffix = [loc + 1 for loc in loc_bpe]
+                location_bpe_prefix = [loc for loc, tok in enumerate(sent_tok) 
+                                        if "@@" in tok]
+                
+                location_bpe_unsplit = [] # their locations without bpe split
+                for idx, loc_bpe_prefix in enumerate(location_bpe_prefix):
+                    number_previous_bpe = len(location_bpe_prefix[:idx])
+                    loc_bpe_unsplit = loc_bpe_prefix - number_previous_bpe
+                    location_bpe_unsplit.append(loc_bpe_unsplit)
+
+                location_bpe_suffix = [loc + 1 for loc in location_bpe_prefix]
 
                 bpe_reward = [None] * len(sent_tok)
                 bpe_count = 0
                 for ii in range(len(sent_tok)):
-                    if ii in loc_bpe_suffix:
-                        # the bpe suffix has the same reward as the bpe-prefix
-                        orig_loc_bpe_prefix = loc_bpe_in_original[loc_bpe_suffix.index(ii)]
-                        bpe_reward[ii] = reward_tok[orig_loc_bpe_prefix]
+                    # bpe suffix has the same reward as its prefix
+                    if ii in location_bpe_suffix:
+                        ## Get reward by its locaation, same as its prefix, 
+                        ## in the unsplit format.
+                        which_bpe_suffix = location_bpe_suffix.index(ii)
+                        loc_bpe_unsplit = location_bpe_unsplit[which_bpe_suffix]
+                        bpe_reward[ii] = reward_tok[loc_bpe_unsplit]
                         if idx % args.print_interval == 0:
                             print('BPE suffix! loc:{} ; token[loc]:{}; orig_loc:{}; '
                                   'reward[orig_loc]:{}'.format(ii, sent_tok[ii], 
-                                  orig_loc_bpe_prefix, reward_tok[orig_loc_bpe_prefix]))
+                                  loc_bpe_unsplit, reward_tok[loc_bpe_unsplit]))
                         bpe_count += 1
                     else:
                         bpe_reward[ii] = reward_tok[ii-bpe_count]
@@ -71,7 +97,8 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
 
     ap.add_argument("target", type=str, 
-                    help="File for MT output after BPE preprocessing")
+                    help="File for MT output after preprocessing"
+                         "tokenized with BPE")
     ap.add_argument("reward", type=str, 
                     help="File for storing rewards of the MT output" 
                          "before BPE preprocessing")
