@@ -86,6 +86,8 @@ def main(args):
                     else:
                         bpe_reward[ii] = reward_tok[ii-bpe_count]
 
+                assert(bpe_count == len(location_bpe_prefix) == len(location_bpe_suffix))
+
                 if idx % args.print_interval == 0:
                     print('sentence (with sub-word):{}'.format(" ".join(sent_tok)))
                     print("bpe reward:{}\n".format(" ".join(bpe_reward)))
