@@ -4,15 +4,15 @@
 To distribute token-level rewards to sub-word units.
 
 Example: 
-    File from database: ["Today", "is", "not"]
-    Reward from database: ["1", "0", "1"]
+    Sentence with tokenized words but without bpe: ["Today", "is", "not"]
+    Corresponding rewards: ["1", "0", "1"]
     
     Preprocess the above file using trained bpe:
     bpe = ["To@@ ", "day", "is", "n@@", t"]
 
     Output (Reward): ["1", "1", "0", "1", "1"]
 
-Define: bpe_suffix - the token splitted after "@@"
+Define: bpe_suffix - the token split after "@@"
         bpe_prefix - the part with "@@" 
         Example:
             "To@@" is bpe_prefix where "day" is its suffix
