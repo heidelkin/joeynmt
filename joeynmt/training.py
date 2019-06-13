@@ -141,7 +141,9 @@ class TrainManager:
         if "load_model" in train_config.keys():
             model_load_path = train_config["load_model"]
             self.logger.info("Loading model from %s", model_load_path)
-            self.init_from_checkpoint(model_load_path)
+            overwrite_optim_params = train_config.get(
+                "overwrite_optim_params", True)
+            self.init_from_checkpoint(model_load_path, overwrite_optim_params)
 
         # initialize training statistics
         self.steps = 0
@@ -199,7 +201,8 @@ class TrainManager:
         symlink_update("{}.ckpt".format(self.steps),
                        "{}/best.ckpt".format(self.model_dir))
 
-    def init_from_checkpoint(self, path: str) -> None:
+    def init_from_checkpoint(self, path: str, 
+                             overwrite_optim_params: bool=True) -> None:
         """
         Initialize the trainer from a given checkpoint file.
 
@@ -207,12 +210,19 @@ class TrainManager:
         scheduler and optimizer states, see `self._save_checkpoint`.
 
         :param path: path to checkpoint
+        :param overwrite_optim_params: If True, overwrite hyper-params 
+                                       of optimizer using values from   
+                                       checkpoint. 
+                                       If False, use values defined in config.
         """
         model_checkpoint = load_checkpoint(path=path, use_cuda=self.use_cuda)
 
         # restore model and optimizer parameters
         self.model.load_state_dict(model_checkpoint["model_state"])
-        self.optimizer.load_state_dict(model_checkpoint["optimizer_state"])
+        if overwrite_optim_params:
+            self.optimizer.load_state_dict(model_checkpoint["optimizer_state"])
+            self.logger.info("Overwrite optim; lr:{}".format(
+                param_group["lr"]))
 
         if model_checkpoint["scheduler_state"] is not None and \
                         self.scheduler is not None:
