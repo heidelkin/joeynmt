@@ -221,8 +221,10 @@ class TrainManager:
         self.model.load_state_dict(model_checkpoint["model_state"])
         if overwrite_optim_params:
             self.optimizer.load_state_dict(model_checkpoint["optimizer_state"])
-            self.logger.info("Overwrite optim; lr:{}".format(
-                param_group["lr"]))
+            self.logger.info("Overwrite optim")
+
+        self.logger.info("Optim; lr:{}".format(
+            self.optimizer.param_groups[0]["lr"]))
 
         if model_checkpoint["scheduler_state"] is not None and \
                         self.scheduler is not None:

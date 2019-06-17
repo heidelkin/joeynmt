@@ -33,6 +33,9 @@ class Batch:
         self.ntokens = None
         self.use_cuda = use_cuda
 
+        ## Involve the case for translate mode on input file
+        self.weights = None
+
         if hasattr(torch_batch, "trg"):
             trg, trg_lengths = torch_batch.trg
             # trg_input is used for teacher forcing, last one is cut off
@@ -57,8 +60,6 @@ class Batch:
                     weights[i, len(weight_seq)] = 1.0
                 self.weights = torch.from_numpy(weights).float().to(
                     self.trg.device)
-            else:
-                self.weights = None
 
         if use_cuda:
             self._make_cuda()
